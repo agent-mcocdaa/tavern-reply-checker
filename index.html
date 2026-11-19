@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Roleplay chat check — measure the problems before you pay anyone to fix them</title>
+<meta name="description" content="Paste a roleplay chat export and see, reply by reply, which ones write your lines for you and which ones are canned filler. It computes in your browser; nothing reaches my server unless you press Send.">
+<meta name="color-scheme" content="light dark">
+
+<style>
+  :root{
+    --ink:#171310; --sub:#5d554c; --line:#e2d9cc; --bg:#fbf8f3; --card:#ffffff;
+    --warm:#b4542a; --warm-soft:#f6e7dc; --ok:#2f6b4f; --link:#8f3f1d;
+    --edge:#f6f1e8;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{ --ink:#f3ece2; --sub:#bdb2a4; --line:#3a332c; --bg:#14110e; --card:#1c1815;
+      --warm:#f0a077; --warm-soft:#33231a; --ok:#87c9a5; --edge:#1a1613; --link:#f4b58f; }
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg); color:var(--ink);
+    font-family:system-ui,-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    line-height:1.7; font-size:16px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:960px;margin:0 auto;padding:0 20px}
+  /* 首屏 */
+  header.hero{position:relative;overflow:hidden;border-bottom:1px solid var(--line)}
+  .ph{height:clamp(200px,34vw,320px);background:radial-gradient(120% 100% at 70% 20%,#4a3524,#1d1611 70%)}
+  .hero img{display:block;width:100%;height:clamp(240px,42vw,420px);object-fit:cover;opacity:.92}
+  .hero .cap{position:absolute;inset:auto 0 0 0;padding:clamp(18px,4vw,40px);
+    background:linear-gradient(to top, color-mix(in srgb, var(--bg) 92%, transparent), transparent)}
+  h1{font-family:"Songti SC","Noto Serif SC",serif;font-size:clamp(26px,4.6vw,44px);line-height:1.25;margin:0 0 8px;letter-spacing:.01em}
+  .lede{margin:0;color:var(--sub);font-size:clamp(15px,2.2vw,18px)}
+  .contact{margin:10px 0 0;font-size:clamp(14px,2vw,16px);color:var(--sub)}
+  .contact a{color:var(--warm);font-weight:600;text-decoration:none;border-bottom:1px solid currentColor}
+  /* 工具 */
+  .tool{margin:clamp(24px,5vw,44px) 0 0}
+  .drop{
+    background:var(--card); border:1px solid var(--line); border-radius:14px;
+    padding:clamp(14px,3vw,22px);
+  }
+  .drop.dragover{border-color:var(--warm); background:var(--warm-soft)}
+  label.file{
+    display:flex;align-items:center;gap:10px;cursor:pointer;
+    border:1px dashed var(--line);border-radius:10px;padding:14px 16px;color:var(--sub);font-size:15px;
+  }
+  label.file:hover{border-color:var(--warm);color:var(--ink)}
+  label.file strong{color:var(--warm);font-weight:600}
+  input[type=file]{display:none}
+  textarea{
+    width:100%;min-height:132px;margin-top:12px;resize:vertical;
+    font-family:ui-monospace,"SFMono-Regular",Menlo,Consolas,monospace;font-size:13px;line-height:1.6;
+    padding:12px 14px;border-radius:10px;border:1px solid var(--line);
+    background:var(--bg);color:var(--ink);
+  }
+  textarea:focus{outline:2px solid color-mix(in srgb, var(--warm) 45%, transparent);outline-offset:1px}
+  .row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px}
+  button{
+    font:inherit;font-weight:600;border:0;border-radius:10px;padding:11px 20px;cursor:pointer;
+    background:var(--warm);color:var(--ink);
+  }
+  @media (prefers-color-scheme: dark){ button{color:#14110e} }
+  button.ghost{background:transparent;color:var(--sub);border:1px solid var(--line)}
+  button:focus-visible{outline:2px solid var(--warm);outline-offset:2px}
+  #send{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
+  #send h3{margin:0 0 6px;font-size:1rem}
+  #send input{flex:1 1 200px;min-width:0;padding:.6rem .7rem;border:1px solid var(--line);border-radius:8px;
+    font:inherit;color:var(--fg);background:color-mix(in srgb, var(--fg) 4%, transparent)}
+  #send input:focus{outline:2px solid color-mix(in srgb, var(--warm) 45%, transparent);outline-offset:1px}
+  .hint{color:var(--sub);font-size:13px;margin:0}
+  /* 结果 */
+  #out{margin-top:18px;display:none}
+  #out.on{display:block}
+  .nums{display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));gap:10px}
+  .num{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .num b{display:block;font-family:"Songti SC","Noto Serif SC",serif;font-size:clamp(22px,3.6vw,30px);line-height:1.2}
+  .num span{display:block;color:var(--sub);font-size:12px;margin-top:4px}
+  .num.bad b{color:var(--warm)}
+  .num.good b{color:var(--ok)}
+  ul.find{list-style:none;padding:0;margin:16px 0 0}
+  ul.find li{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--warm);border-radius:10px;padding:12px 16px;margin-bottom:10px}
+  ul.find li b{display:inline-block;font-size:12px;letter-spacing:.12em;color:var(--warm);margin-right:8px}
+  /* 下一步 */
+  .next{margin:clamp(28px,5vw,48px) 0 0;padding:clamp(16px,3vw,24px);border-radius:14px;background:var(--warm-soft)}
+  .next h2{font-family:"Songti SC","Noto Serif SC",serif;font-size:clamp(19px,2.8vw,24px);margin:0 0 8px}
+  .next p{margin:0 0 10px}
+  .next a{color:var(--link);font-weight:600;text-decoration:none;border-bottom:1px solid currentColor}
+  /* 折叠 */
+  details{margin-top:18px;border-top:1px solid var(--line);padding-top:14px}
+  summary{cursor:pointer;font-weight:600;font-size:15px}
+  details p{color:var(--sub);font-size:14px;margin:10px 0 0}
+  footer{margin:clamp(30px,6vw,56px) 0 40px;color:var(--sub);font-size:13px;border-top:1px solid var(--line);padding-top:16px}
+  .err{color:var(--warm);font-size:14px;margin-top:10px}
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="ph" role="img" aria-label="Two empty seats by a tavern window at night, warm amber light"></div>
+  <div class="cap">
+    <h1>Look at the numbers first — then decide whether to pay for training</h1>
+    <p class="lede">Paste a <strong>roleplay chat export</strong> and see, reply by reply, which ones write your lines for you and which ones are canned filler. It computes inside your browser — nothing reaches my server unless you press «Send».</p>
+    <p class="contact">Questions, or a log you want read: <a href="mailto:agent@mcocdaa.com">agent@mcocdaa.com</a></p>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="tool">
+    <div class="drop" id="drop">
+      <label class="file" for="file">
+        <strong>Choose a file</strong> — or drop a SillyTavern export (.jsonl / .json) here
+      </label>
+      <input type="file" id="file" accept=".jsonl,.json,.txt,application/json,text/plain">
+      <textarea id="ta" placeholder="Or paste the conversation here. Works with SillyTavern's «Export → the one with brackets», or plain {'role':'user','content':'…'} lines."></textarea>
+      <div class="row">
+        <button id="run">Run the check</button>
+        <button class="ghost" id="clear" type="button">Clear</button>
+        <p class="hint" id="hint">It reports exactly how many messages it could read. Unreadable lines are counted as unreadable — no invented numbers.</p>
+      </div>
+      <p class="err" id="err" hidden></p>
+    </div>
+
+    <section id="out" aria-live="polite">
+      <div class="nums" id="nums"></div>
+      <ul class="find" id="find"></ul>
+    </section>
+
+    <div class="next">
+      <h2>Want a report you can hand to someone else?</h2>
+      <p>This page only answers «does it look broken». The full report names the replies that go off, how they go off, and <strong>whether to fix the character card or the way it is wired to the model</strong> — then re-runs the same input as a paired before/after. Send me the log plus the character card: <a href="mailto:agent@mcocdaa.com?subject=materials">agent@mcocdaa.com</a></p>
+      <p class="hint">The check, the report and the «what to fix first» advice are free. Training is quoted separately, and only if you actually need it — if you do not, nothing is charged.</p>
+
+      <p class="hint">This page has no server behind it: nothing can be posted from here. Email the log to <a href="mailto:agent@mcocdaa.com">agent@mcocdaa.com</a> and you get the same read by hand.</p>
+    </div>
+
+    <details>
+      <summary>How these numbers are computed</summary>
+      <p>Character replies are counted as they are: mean length, longest reply. «Sounds cut off» looks at whether the reply ends on sentence-final punctuation. «Canned phrases» is the share of replies containing any phrase from a fixed list. «Same opening» compares the first eight characters of each reply. «Nearly identical neighbours» flags adjacent replies whose character bigrams overlap more than half. «Writing your lines» looks for blocks where your name is followed by a colon, or for placeholders like <code>{{user}}</code>. The rules were tuned on real before/after records I ran: the same log gives the same mean length, longest reply and «writing your lines» count here and in the full checker.</p>
+    </details>
+    <details>
+      <summary>Limits and privacy</summary>
+      <p>«Run the check» computes inside your browser: no upload, no network, no model calls; close the tab and nothing is left. Only if you press «Send» does the conversation and your reply address reach my server. This pass reads format and text only — it cannot follow the story, and it will not judge whether the character card is any good; that takes a human reading the card. It gives leads, not a verdict: whether a fix worked is settled by re-running the same log as a paired comparison.</p>
+    </details>
+
+    <footer>Roleplay chat check · Zou Bo — the point: turn «the replies never feel right» into numbers you can check, and only then talk about money.</footer>
+  </section>
+</main>
+
+<script>
+/* 酒馆对话初筛：纯前端、纯本地，不上传、不出网。
+   语义对齐我们的 Python 体检台（diagnose.py）里最稳的几项；这是初筛，不是判决。 */
+(function (root) {
+  const CLICHE = ["好的呢", "微微一笑", "嘴角勾起", "嘴角微微", "嘴角上扬", "勾起嘴角", "眼中闪过", "眼底闪过", "眸光", "眼眸", "不由得", "下意识地", "深吸一口气", "叹了口气", "轻轻叹了口气", "心里一紧", "心跳漏了", "空气仿佛", "仿佛凝固", "沉默了片刻", "沉默了一会", "沉默了一会儿", "眼神复杂", "若有所思", "意味深长", "不容置疑", "毋庸置疑", "不易察觉", "低笑", "轻笑一声", "挑眉", "歪了歪头", "无奈地笑", "喉结", "指尖", "声音低沉", "嗓音沙哑", "微微一顿", "勾唇", "咬了咬唇", "怔了怔"];
+  const CLICHE_EN = ["breath hitched", "shiver down", "couldn't help but", "eyes glinted", "the air was thick", "a mix of", "predatory", "dangerously low", "half-lidded", "swallowed hard", "let out a breath", "let out a shaky breath", "chewed on", "curled her lips", "curled his lips", "hummed thoughtfully", "an unreadable expression", "a ghost of a smile", "something flickered"];
+  const ENDERS = "。！？!?…~～”’」』）).、,";
+
+  function parse(text) {
+    const out = [];
+    const lines = String(text).split(/\r?\n/);
+    let bad = 0;
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      let o;
+      try { o = JSON.parse(line); } catch (e) { bad++; continue; }
+      if (o && (o.chat_metadata || (o.user_name && !o.mes && !o.content))) continue; // 导出头
+      if (o && typeof o.mes === "string") {
+        out.push({ role: o.is_user ? "user" : (o.is_system ? "sys" : "char"), text: o.mes, name: o.name || "" });
+      } else if (o && typeof o.content === "string") {
+        const r = (o.role || "").toLowerCase();
+        out.push({ role: r === "user" ? "user" : (r === "system" ? "sys" : "char"), text: o.content, name: o.name || "" });
+      } else if (o && Array.isArray(o.messages)) {
+        for (const m of o.messages) {
+          if (!m || typeof m.content !== "string") continue;
+          const r = (m.role || "").toLowerCase();
+          out.push({ role: r === "user" ? "user" : (r === "system" ? "sys" : "char"), text: m.content, name: m.name || "" });
+        }
+      } else bad++;
+    }
+    return { msgs: out, unreadable: bad };
+  }
+
+  function bigrams(s) {
+    const t = String(s).replace(/\s+/g, "");
+    const g = new Set();
+    for (let i = 0; i < t.length - 1; i++) g.add(t.slice(i, i + 2));
+    return g;
+  }
+  function jaccard(a, b) {
+    const A = bigrams(a), B = bigrams(b);
+    if (!A.size || !B.size) return 0;
+    let inter = 0;
+    for (const x of A) if (B.has(x)) inter++;
+    return inter / (A.size + B.size - inter);
+  }
+  const r2 = (n) => Math.round(n * 100) / 100;
+
+  // 像说到一半：判据对齐 Python 体检台（diagnose.py）
+  const TERM = "。！？!?….~～\"'”’」』）)】》>";
+  function stripStateBlock(t) {
+    const m = t.match(/```[\s\S]*?```\s*$/);
+    if (m && m.index && m.index > 0) return t.slice(0, m.index).trim();
+    return t;
+  }
+  const TAIL_MARKUP = "*_`\"'”’』」】）)]}~～－-· ";
+  const DANGLING = ["，", "、", "；", "：", ",", ";", ":", "而且", "但是", "然后", "因为", "所以", "并且", "以及", "或是", "还是"];
+  function cutLike(text) {
+    let t = String(text).trim();
+    if (!t) return false;
+    t = stripStateBlock(t);
+    if ([...t].length < 60) return false;
+    if (TERM.includes(t.slice(-1))) return false;
+    const tail = t.replace(/\s+$/, "");
+    const last = tail.slice(-1);
+    if ((last === "*" || last === "_") && (tail.split(last).length - 1) % 2 === 0) return false;
+    let core = tail;
+    while (core && TAIL_MARKUP.includes(core.slice(-1))) core = core.slice(0, -1).replace(/\s+$/, "");
+    if (!core) return false;
+    if (TERM.includes(core.slice(-1))) return false;
+    const last40 = core.slice(-40).replace(/\s+/g, "");
+    if (/[。！？…!?.]/.test(last40) && !DANGLING.some((d) => core.endsWith(d))) return false;
+    return true;
+  }
+  function analyze(text) {
+    const { msgs, unreadable } = parse(text);
+    const chars = msgs.filter(m => m.role === "char");
+    const users = msgs.filter(m => m.role === "user");
+    const n = chars.length;
+    const lens = chars.map(m => [...m.text.trim()].length);
+    const sum = lens.reduce((a, b) => a + b, 0);
+
+    // 像说到一半
+    const cut = chars.filter(m => cutLike(m.text)).length;
+
+    // 套路短语
+    const hits = {};
+    let clicheMsgs = 0;
+    for (const m of chars) {
+      let hit = false;
+      const low = m.text.toLowerCase();
+      for (const w of CLICHE) if (m.text.includes(w)) { hits[w] = (hits[w] || 0) + 1; hit = true; }
+      for (const w of CLICHE_EN) if (low.includes(w)) { hits[w] = (hits[w] || 0) + 1; hit = true; }
+      if (hit) clicheMsgs++;
+    }
+    const topCliche = Object.entries(hits).sort((a, b) => b[1] - a[1]).slice(0, 3);
+
+    // 开头雷同
+    const opens = {};
+    for (const m of chars) {
+      const k = [...m.text.trim()].slice(0, 8).join("");
+      if (k.length >= 4) opens[k] = (opens[k] || 0) + 1;
+    }
+    const dupOpens = Object.values(opens).filter(v => v > 1).reduce((a, b) => a + b, 0);
+
+    // 相邻雷同
+    let adj = 0;
+    for (let i = 1; i < n; i++) if (jaccard(chars[i - 1].text, chars[i].text) >= 0.6) adj++;
+
+    // 替客户说话
+    const names = [...new Set(users.map(m => m.name).filter(Boolean))];
+    const userLines = [...new Set(users.map(m => (m.text || "").trim()).filter(x => x.length >= 6))];
+    const tidy = (x) => x.replace(/^[\s\"'“”‘’]+|[\s\"'“”‘’]+$/g, "");
+    let steal = 0;
+    for (const m of chars) {
+      const t = m.text;
+      if (/\{\{user\}\}|<USER>|\[user\]/i.test(t)) { steal++; continue; }
+      if (names.some(nm => new RegExp("(^|\\n)\\s*" + nm.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\s*[:：]").test(t))) { steal++; continue; }
+      // 逐字复述客户原话：去掉「名字:」前缀后，以原话开头（≥6 字）或正文含原话（≥10 字）
+      const body = t.replace(/^\s*[^\n:：]{1,12}[:：]\s*/, "").trim();
+      let hit = false;
+      for (const u of userLines) {
+        const uu = tidy(u);
+        if (!uu) continue;
+        if (uu.length >= 6 && body.startsWith(uu)) { hit = true; break; }
+        if (uu.length >= 10 && body.includes(uu)) { hit = true; break; }
+      }
+      if (hit) steal++;
+    }
+
+    // 越聊越长：前半 / 后半 均长
+    let growth = null;
+    if (n >= 4) {
+      const h = Math.floor(n / 2);
+      const a = lens.slice(0, h).reduce((x, y) => x + y, 0) / h;
+      const b = lens.slice(n - h).reduce((x, y) => x + y, 0) / h;
+      growth = a ? r2(b / a) : null;
+    }
+
+    // 语言混杂：连续拉丁词
+    const latin = chars.filter(m => (m.text.match(/[A-Za-z]{4,}/g) || []).length >= 2).length;
+
+    return {
+      total: msgs.length, userCount: users.length, charCount: n, unreadable,
+      avgLen: n ? r2(sum / n) : 0, maxLen: n ? Math.max(...lens) : 0,
+      cut, clicheMsgs, clicheRate: n ? r2(clicheMsgs / n) : 0, topCliche,
+      dupOpens, adjSimilar: adj, steal, growth, latin,
+      sample: chars.slice(0, 3).map(m => m.text.trim().slice(0, 40))
+    };
+  }
+
+  function verdict(a) {
+    const out = [];
+    if (!a.charCount) return [{ k: "Start here", t: "No character replies were read. The file format may be off, or the export only carried your own half of the conversation." }];
+    if (a.steal > 0) out.push({ k: "Fix this first", t: `${a.steal} replies write your lines for you — they put your actions and dialogue on the character's side of the page. That hurts the experience most, so fix it first: pin the main instruction to «write only the character's own actions and dialogue; leave the other side blank».` });
+    if (a.clicheRate >= 0.3) out.push({ k: "Next", t: `About ${Math.round(a.clicheRate * 100)}% of replies reuse the same stock phrases${a.topCliche.length ? " (" + a.topCliche.map(x => "\"" + x[0] + "\"").join(", ") + ")" : ""}. That is a wiring/sampling problem, not a model that is not smart enough.` });
+    if (a.dupOpens >= 2 || a.adjSimilar >= 2) out.push({ k: "Worth a look", t: `${a.dupOpens} replies open identically and ${a.adjSimilar} neighbouring pairs are near-duplicates. If «regenerate» gives you much the same thing again and again, sampling is probably too narrow or the repetition penalty is turned up too high.` });
+    if (a.cut >= 2) out.push({ k: "Quick check", t: `${a.cut} replies end without closing punctuation, as if cut mid-sentence. Look at the length cap in your settings first.` });
+    if (a.growth && a.growth >= 1.6) out.push({ k: "Quick check", t: `Replies grow: the second half averages ${Math.round(a.avgLen * a.growth)} characters, ${a.growth}× the first half.` });
+    if (a.latin >= 2) out.push({ k: "Quick check", t: `${a.latin} replies have stray Latin words or mojibake mixed in — a classic symptom of a mismatched prompt format.` });
+    if (!out.length) out.push({ k: "Verdict", t: "This pass found nothing obvious. If it still feels wrong, the problem is probably in what I cannot measure — the character card itself, or consistency with your lore. Send the log together with the card and a human reads it again." });
+    return out.slice(0, 3);
+  }
+
+  const api = { parse, analyze, verdict, CLICHE };
+  if (typeof module !== "undefined" && module.exports) module.exports = api;
+  root.TavernCheck = api;
+})(typeof window !== "undefined" ? window : globalThis);
+
+</script>
+<script>
+(function(){
+  const $ = (s) => document.querySelector(s);
+  const ta = $("#ta"), file = $("#file"), out = $("#out"), nums = $("#nums"), find = $("#find"),
+        hint = $("#hint"), err = $("#err"), drop = $("#drop");
+
+  function render(text){
+    err.hidden = true;
+    let a;
+    try { a = TavernCheck.analyze(text); } catch (e) {
+      err.hidden = false; err.textContent = "Could not parse that: " + e.message; return;
+    }
+    if (!a.total) {
+      err.hidden = false;
+      err.textContent = a.unreadable ? `Read ${a.unreadable} lines but recognised none of them. Check whether the export only contains the settings header line.`
+                                     : "Nothing here yet.";
+      out.classList.remove("on"); return;
+    }
+    const cards = [
+      { v: a.charCount, l: "Character replies", cls: "" },
+      { v: a.avgLen, l: "Avg chars per reply", cls: "" },
+      { v: a.maxLen, l: "Longest reply", cls: "" },
+      { v: a.steal, l: "Replies that took your lines", cls: a.steal ? "bad" : "good" },
+      { v: Math.round(a.clicheRate * 100) + "%", l: "Canned-phrase rate", cls: a.clicheRate >= .3 ? "bad" : "" },
+      { v: a.dupOpens + a.adjSimilar, l: "Look-alike replies", cls: (a.dupOpens + a.adjSimilar) >= 2 ? "bad" : "" }
+    ];
+    nums.innerHTML = cards.map(c => `<div class="num ${c.cls}"><b>${c.v}</b><span>${c.l}</span></div>`).join("");
+    find.innerHTML = TavernCheck.verdict(a).map(v => `<li><b>${v.k}</b>${v.t}</li>`).join("");
+    hint.textContent = `Read ${a.total} messages: ${a.userCount} from you, ${a.charCount} from the character` + (a.unreadable ? `, plus ${a.unreadable} lines it could not read` : "") + ".";
+    out.classList.add("on");
+  }
+
+  function run(){ const t = ta.value.trim(); if (!t) { err.hidden = false; err.textContent = "Paste a conversation first."; return; } render(t); }
+
+    $("#run").addEventListener("click", run);
+  $("#clear").addEventListener("click", () => { ta.value = ""; out.classList.remove("on"); err.hidden = true; hint.textContent = "It reports exactly how many messages it could read. Unreadable lines are counted as unreadable — no invented numbers."; });
+  ta.addEventListener("keydown", (e) => { if (e.isComposing || e.keyCode === 229) return; if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) run(); });
+
+  function readFile(f){
+    if (!f) return;
+    const r = new FileReader();
+    r.onload = () => { ta.value = String(r.result); render(ta.value); };
+    r.onerror = () => { err.hidden = false; err.textContent = "That file could not be read."; };
+    r.readAsText(f, "utf-8");
+  }
+  file.addEventListener("change", (e) => readFile(e.target.files[0]));
+  ["dragenter","dragover"].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("dragover"); }));
+  ["dragleave","drop"].forEach(ev => drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("dragover"); }));
+  drop.addEventListener("drop", (e) => { const f = e.dataTransfer.files && e.dataTransfer.files[0]; if (f) readFile(f); });
+})();
+</script>
+</body>
+</html>
