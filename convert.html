@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>对话记录格式转换 · role/content → mes/is_user</title>
+<style>
+  :root { --bg:#fbf8f3; --fg:#171310; --dim:#6b625a; --line:#e3dbd0; --acc:#8a4b2f; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:16px/1.7 "Noto Serif SC",Georgia,serif; }
+  header, main, footer { max-width: 860px; margin: 0 auto; padding: 0 20px; }
+  header { padding-top: 40px; }
+  h1 { font-size: 1.5rem; line-height:1.35; margin: 0 0 10px; }
+  .lede { color: var(--dim); margin: 0 0 6px; }
+  .badge { display:inline-block; font-size:.8rem; color:var(--acc); border:1px solid var(--line); border-radius:999px; padding:2px 10px; }
+  textarea { width:100%; min-height:190px; padding:12px; border:1px solid var(--line); border-radius:8px; font:13px/1.5 ui-monospace,Menlo,monospace; background:#fff; color:var(--fg); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin:14px 0; }
+  button { font:inherit; padding:8px 18px; border-radius:8px; border:1px solid var(--acc); background:var(--acc); color:#fff; cursor:pointer; }
+  button.ghost { background:#fff; color:var(--acc); }
+  button:disabled { opacity:.45; cursor:default; }
+  #stats { font-size:.95rem; color:var(--dim); }
+  #stats b { color: var(--fg); }
+  pre { white-space:pre-wrap; word-break:break-all; background:#fff; border:1px solid var(--line); border-radius:8px; padding:12px; font:13px/1.5 ui-monospace,Menlo,monospace; max-height:340px; overflow:auto; }
+  .warn { color:#8a2f2f; }
+  footer { color:var(--dim); font-size:.9rem; padding:28px 20px 48px; }
+  a { color: var(--acc); }
+  @media (max-width:560px){ h1{font-size:1.25rem} }
+</style>
+</head>
+<body>
+<header>
+  <h1>把别的格式的对话记录，转成能体检的格式</h1>
+  <p class="lede">自建 agent、客服机器人、AVG / 恋爱游戏的对白日志，大多是 <code>role</code> + <code>content</code>；我们那两页体检器和在服务市场的能力包，只认酒馆导出的 <code>mes</code> + <code>is_user</code>。这页就干这一件事。</p>
+  <p class="lede"><span class="badge">纯本地 · 零网络请求 · 不上传</span>　记录不出你的浏览器，页面上没有服务器。</p>
+</header>
+
+<main>
+  <p>支持：JSON 数组、一行一条的 JSONL、带 <code>messages</code> 字段的整包、TavernAI 的 <code>from/mes</code>；已经转好的 <code>mes/is_user</code> 放进来不会变形（幂等）。<strong>认不出身份的（没有 role、role 不是我认识的词）不猜</strong>——单列出来，宁可少一条，也不把模型的台词算成你的。</p>
+  <textarea id="ta" placeholder='{"role":"user","content":"发票能补吗？"}
+{"role":"assistant","content":"可以，把单号发我。"}  或  [{"role":"system","content":"你是客服"}, …]'></textarea>
+  <div class="row">
+    <button id="run">转换</button>
+    <button id="copy" class="ghost" disabled>复制结果</button>
+    <button id="dl" class="ghost" disabled>下载 .jsonl</button>
+    <span id="stats">还没转。</span>
+  </div>
+  <div id="msg"></div>
+  <pre id="out" hidden></pre>
+</main>
+
+<footer>
+  <p>转完把结果粘进体检器：<a href="./index.html">单文件离线体检器</a>（同一页，纯本地）；要我们出带原文证据的报告，发 <a href="mailto:agent@mcocdaa.com">agent@mcocdaa.com</a>。</p>
+  <p>这页不算分、不给评价——它只是把格式对齐，量毛病的是另一页。</p>
+</footer>
+
+<script>
+// 把 role/content 风格的对话记录（OpenAI / 自建 agent / 客服 / AVG 脚本）转成
+// mes + is_user 风格（酒馆 / SillyTavern 导出同构），供离线体检器与能力包处理。
+(function (root) {
+  "use strict";
+  var USER = ["user", "human", "player", "客户", "用户"];
+  var SYS = ["system", "developer", "sys"];
+  var CHAR = ["assistant", "ai", "bot", "char", "character", "model", "agent", "npc"];
+
+  function pick(o) {
+    // 返回 {text, role, name} 或 null
+    if (o === null || typeof o !== "object") return null;
+    var text = null, role = null, name = o.name || o.speaker || o.author || o.character || "";
+    if (typeof o.content === "string") text = o.content;
+    else if (Array.isArray(o.content)) {                       // OpenAI 多段 content
+      var parts = [];
+      for (var i = 0; i < o.content.length; i++) {
+        var p = o.content[i];
+        if (typeof p === "string") parts.push(p);
+        else if (p && typeof p.text === "string") parts.push(p.text);
+      }
+      text = parts.join("\n");
+    } else if (typeof o.mes === "string") text = o.mes;
+    else if (typeof o.text === "string") text = o.text;
+    else if (typeof o.message === "string") text = o.message;
+    if (text === null) return null;
+    if (typeof o.role === "string") role = o.role.toLowerCase();
+    else if (typeof o.from === "string") role = o.from.toLowerCase();  // TavernAI
+    else if (typeof o.sender === "string") role = o.sender.toLowerCase();
+    if (!role && typeof o.is_user === "boolean") role = o.is_user ? "user" : "assistant";
+    if (!role && /^(顾客|客户)$/.test(String(name))) role = "user";
+    return { text: text, role: role || "", name: name };
+  }
+
+  function classify(rec) {
+    var r = rec.role;
+    if (SYS.indexOf(r) >= 0) return { is_user: false, is_system: true };
+    if (USER.indexOf(r) >= 0 || r === "customer") return { is_user: true, is_system: false };
+    if (CHAR.indexOf(r) >= 0) return { is_user: false, is_system: false };
+    if (r === "tool" || r === "function") return { is_user: false, is_system: true, tool: true };
+    return null; // 认不出身份：不猜，计数并列出
+  }
+
+  function convert(input) {
+    var lines = String(input || "").split(/\r?\n/), items = [], bad = 0, blank = 0, unknown = 0;
+    // 整段是 JSON 数组 / 单个对象 / {"messages":[...]} 的情况
+    var whole = null;
+    var t = String(input || "").trim();
+    if (t && (t[0] === "[" || t[0] === "{")) {
+      try {
+        var j = JSON.parse(t);
+        if (Array.isArray(j)) whole = j;
+        else if (j && Array.isArray(j.messages)) whole = j.messages;
+        else if (j && Array.isArray(j.chat_messages)) whole = j.chat_messages;
+        else if (j && typeof j === "object") whole = [j];
+      } catch (e) { whole = null; }
+    }
+    if (whole) items = whole;
+    else {
+      for (var i = 0; i < lines.length; i++) {
+        var ln = lines[i].trim();
+        if (!ln) { blank++; continue; }
+        try { items.push(JSON.parse(ln)); } catch (e) { bad++; }
+      }
+    }
+    var out = [], unknownList = [], sys = 0, u = 0, a = 0;
+    for (var k = 0; k < items.length; k++) {
+      var rec = pick(items[k]);
+      if (!rec) { bad++; continue; }
+      var c = classify(rec);
+      if (!c) { unknown++; unknownList.push(items[k]); continue; }
+      if (c.is_system) { sys++; continue; }               // 系统提示不进对话记录
+      var obj = { name: String(rec.name || (c.is_user ? "玩家" : "角色")), is_user: !!c.is_user, mes: rec.text };
+      if (c.is_user) u++; else a++;
+      out.push(JSON.stringify(obj));
+    }
+    return {
+      jsonl: out.join("\n") + (out.length ? "\n" : ""),
+      n: out.length, user: u, char: a, system: sys, bad: bad, blank: blank,
+      unknown: unknown, unknownSample: unknownList.slice(0, 3),
+      why: out.length === 0
+    };
+  }
+  root.convert = convert;
+  if (typeof module !== "undefined" && module.exports) module.exports = convert;
+})(typeof window !== "undefined" ? window : globalThis);
+
+(function () {
+  var ta = document.getElementById('ta'), out = document.getElementById('out'),
+      stats = document.getElementById('stats'), msg = document.getElementById('msg'),
+      copyBtn = document.getElementById('copy'), dlBtn = document.getElementById('dl'), last = '';
+
+  function show(r) {
+    out.hidden = false; out.textContent = r.jsonl || '（没有可以输出的行）';
+    last = r.jsonl; copyBtn.disabled = !r.n; dlBtn.disabled = !r.n;
+    var bits = ['读到 <b>' + r.n + '</b> 条（你 <b>' + r.user + '</b> · 角色 <b>' + r.char + '</b>）'];
+    if (r.system) bits.push('系统/工具行 ' + r.system + ' 条（不进对话）');
+    if (r.bad) bits.push('<span class="warn">坏行 ' + r.bad + ' 行</span>');
+    if (r.unknown) bits.push('<span class="warn">认不出身份 ' + r.unknown + ' 条</span>');
+    stats.innerHTML = bits.join(' · ');
+    msg.innerHTML = '';
+    if (r.unknown) msg.innerHTML = '<p class="warn">这 ' + r.unknown + ' 条我没敢猜是谁说的（缺 role、或 role 不在我认识的词表里）：' +
+      '<code>' + r.unknownSample.map(function (o) { return JSON.stringify(o).slice(0, 90); }).join('</code> <code>') + '</code>。' +
+      '把它们的 <code>role</code> 补成 user / assistant 再转一次。</p>';
+    if (r.why) msg.innerHTML += '<p class="warn">一条都没认出来——不是我算成 0，是这个输入里没有我能识别的对话行。检查是不是整段带了导出头或代码块围栏。</p>';
+  }
+
+  document.getElementById('run').onclick = function () { show(convert(ta.value)); };
+  copyBtn.onclick = function () {
+    if (navigator.clipboard) navigator.clipboard.writeText(last).then(function () { copyBtn.textContent = '已复制'; setTimeout(function(){ copyBtn.textContent = '复制结果'; }, 1200); });
+  };
+  dlBtn.onclick = function () {
+    var b = new Blob([last], { type: 'application/jsonl' }), a = document.createElement('a');
+    a.href = URL.createObjectURL(b); a.download = 'converted.jsonl'; a.click();
+  };
+})();
+</script>
+</body>
+</html>
