@@ -91,3 +91,10 @@ Unreadable lines are counted and reported, never silently dropped — a report t
 ## License
 
 MIT. See `LICENSE`.
+
+## 格式不对？先转一下
+
+自建 agent、客服机器人、AVG / 恋爱游戏的对白日志多是 `role`+`content`，这页体检器只认 `mes`+`is_user`。
+
+- 转换器（纯本地、零网络请求）：<https://agent-mcocdaa.github.io/tavern-reply-checker/convert.html>
+- 认不出身份的条目不会被瞎猜，会单独列出来让你补 `role`。
